@@ -136,7 +136,10 @@ func rootRunEWithExtra(cmd *cobra.Command, args []string, flag *flagType, allPer
 	authorizedKeys := make(map[string]bool)
 	for _, k := range flag.sshAuthKeys {
 		hand, err := os.Open(k)
-		if err != nil { continue }
+		if err != nil {
+			logger.Warn(fmt.Sprintf("failed to open authorized keys file %q: %v", k, err))
+			continue
+		}
 		scanner := bufio.NewScanner(hand)
 		for scanner.Scan() {
 			key := scanner.Text()
