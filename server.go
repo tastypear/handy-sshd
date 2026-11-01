@@ -14,7 +14,6 @@ import (
 	"encoding/binary"
 	"encoding/pem"
 	"fmt"
-	"github.com/mattn/go-shellwords"
 	"github.com/nwtgck/handy-sshd/sync_generics"
 	"github.com/pkg/sftp"
 	"golang.org/x/crypto/ssh"
@@ -138,11 +137,10 @@ func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel) {
 		s.Logger.Info("failed to parse message in exec", "err", err)
 		return
 	}
-	cmdSlice, err := shellwords.Parse(msg.Command)
-	if err != nil {
-		return
-	}
-	cmd := exec.Command(cmdSlice[0], cmdSlice[1:]...)
+	// SSH exec requests carry a shell command string, not an argv — run through
+	// the shell like OpenSSH does. Direct argv splitting breaks variable
+	// expansion ($HOME), escapes (\t, \n), pipes, and &&/; sequencing.
+	cmd := exec.Command("sh", "-c", msg.Command)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return
