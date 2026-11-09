@@ -23,6 +23,7 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -92,7 +93,7 @@ func (s *Server) handleSession(shell string, newChannel ssh.NewChannel) {
 				req.Reply(false, nil)
 				break
 			}
-			s.handleExecRequest(req, connection)
+			s.handleExecRequest(req, connection, shell)
 		case "shell":
 			// We only accept the default shell
 			// (i.e. no command in the Payload)
@@ -129,7 +130,31 @@ func (s *Server) handleSession(shell string, newChannel ssh.NewChannel) {
 	}
 }
 
-func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel) {
+// resolveShell picks the shell for exec requests. OpenSSH runs the exec command
+// through the user's login shell; hardcoding "sh" routes every command through
+// /bin/sh (dash on Debian/Ubuntu), which lacks bash-specific syntax that clients
+// (agent-shim/qoder) rely on. An explicit --shell wins, then $SHELL, then the
+// login shell from /etc/passwd for the current uid, then "sh".
+func resolveShell(shell string) string {
+	if shell != "" {
+		return shell
+	}
+	if sh := os.Getenv("SHELL"); sh != "" {
+		return sh
+	}
+	if data, err := os.ReadFile("/etc/passwd"); err == nil {
+		uid := strconv.Itoa(os.Getuid())
+		for _, line := range strings.Split(string(data), "\n") {
+			f := strings.Split(line, ":")
+			if len(f) >= 7 && f[2] == uid && f[6] != "" {
+				return f[6]
+			}
+		}
+	}
+	return "sh"
+}
+
+func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel, shell string) {
 	var msg struct {
 		Command string
 	}
@@ -138,9 +163,9 @@ func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel) {
 		return
 	}
 	// SSH exec requests carry a shell command string, not an argv — run through
-	// the shell like OpenSSH does. Direct argv splitting breaks variable
+	// the login shell like OpenSSH does. Direct argv splitting breaks variable
 	// expansion ($HOME), escapes (\t, \n), pipes, and &&/; sequencing.
-	cmd := exec.Command("sh", "-c", msg.Command)
+	cmd := exec.Command(resolveShell(shell), "-c", msg.Command)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return
