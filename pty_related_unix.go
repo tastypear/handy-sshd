@@ -15,15 +15,25 @@ import (
 	"sync"
 )
 
-func (s *Server) createPty(shell string, connection ssh.Channel) (*os.File, error) {
-	if shell == "" {
-		shell = os.Getenv("SHELL")
-	}
-	if shell == "" {
-		shell = "sh"
-	}
-	// Fire up bash for this session
+func (s *Server) createPty(shell, term string, connection ssh.Channel) (*os.File, error) {
+	// handy-sshd: OpenSSH parity — run the LOGIN USER's shell (flag > $SHELL >
+	// /etc/passwd > sh) instead of the raw process env. Previously a process env
+	// without $SHELL (e.g. minimal containers) silently landed interactive sessions
+	// in "sh" (dash), which has no line editing — arrow/control keys print their
+	// escape/control sequences literally.
+	shell = resolveShell(shell)
 	sh := exec.Command(shell)
+
+	// OpenSSH parity: TERM comes from the pty-req payload, SHELL reflects the session
+	// shell (ttyd behaves the same way). Appended last so they override any inherited
+	// values (Go's os/exec keeps the last occurrence of a duplicate key).
+	env := append(os.Environ(),
+		"SHELL="+shell,
+	)
+	if term != "" {
+		env = append(env, "TERM="+term)
+	}
+	sh.Env = env
 
 	// Prepare teardown function
 	closer := func() {

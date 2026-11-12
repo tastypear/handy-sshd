@@ -9,7 +9,7 @@ import (
 	"os"
 )
 
-func (s *Server) createPty(shell string, connection ssh.Channel) (*os.File, error) {
+func (s *Server) createPty(shell, term string, connection ssh.Channel) (*os.File, error) {
 	return nil, fmt.Errorf("creation of pty unsupported")
 }
 

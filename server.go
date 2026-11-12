@@ -107,8 +107,9 @@ func (s *Server) handleSession(shell string, newChannel ssh.NewChannel) {
 				break
 			}
 			termLen := req.Payload[3]
+			term := string(req.Payload[4 : 4+termLen])
 			w, h := parseDims(req.Payload[termLen+4:])
-			shf, err = s.createPty(shell, connection)
+			shf, err = s.createPty(shell, term, connection)
 			if err != nil {
 				req.Reply(false, nil)
 				return
