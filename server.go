@@ -95,10 +95,19 @@ func (s *Server) handleSession(shell string, newChannel ssh.NewChannel) {
 			}
 			s.handleExecRequest(req, connection, shell)
 		case "shell":
-			// We only accept the default shell
-			// (i.e. no command in the Payload)
-			if len(req.Payload) == 0 {
-				req.Reply(true, nil)
+			// OpenSSH parity: a bare "shell" request runs the login shell. With a pty
+			// (pty-req already processed) the interactive shell is already up; without
+			// one, run the shell over plain pipes (ssh -T style). Previously this case
+			// only replied when the payload was empty and never started a process —
+			// the channel hung forever.
+			if !s.AllowExecute {
+				s.Logger.Info("execution not allowed (shell)")
+				req.Reply(false, nil)
+				break
+			}
+			req.Reply(true, nil)
+			if shf == nil {
+				s.runShellProcess(connection, resolveShell(shell), nil)
 			}
 		case "pty-req":
 			if !s.AllowExecute {
@@ -166,7 +175,14 @@ func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel, she
 	// SSH exec requests carry a shell command string, not an argv — run through
 	// the login shell like OpenSSH does. Direct argv splitting breaks variable
 	// expansion ($HOME), escapes (\t, \n), pipes, and &&/; sequencing.
-	cmd := exec.Command(resolveShell(shell), "-c", msg.Command)
+	s.runShellProcess(connection, resolveShell(shell), []string{"-c", msg.Command})
+}
+
+// runShellProcess runs the shell with the given args over the channel's plain pipes
+// (no pty), then reports the exit status and closes the channel — the OpenSSH
+// no-pty session shape. Shared by "exec" (shell -c command) and bare "shell".
+func (s *Server) runShellProcess(connection ssh.Channel, shell string, args []string) {
+	cmd := exec.Command(shell, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		return
@@ -182,7 +198,6 @@ func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel, she
 	go io.Copy(stdin, connection)
 	go io.Copy(connection, stdout)
 	go io.Copy(connection, stderr)
-	req.Reply(true, nil)
 	var exitCode int
 	if err := cmd.Run(); err != nil {
 		if exitErr, ok := err.(*exec.ExitError); ok {

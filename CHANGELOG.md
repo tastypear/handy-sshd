@@ -5,6 +5,22 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-11-12
+### Changed
+* SFTP responses aligned with OpenSSH: errno table (ENOTDIR/ELOOP/EBADF -> NO_SUCH_FILE,
+  EINVAL/ENAMETOOLONG -> BAD_MESSAGE, ENOSYS -> OP_UNSUPPORTED), canonical openssh status
+  messages ("No such file", "Failure", ...) instead of Go error texts, and an
+  OpenSSH-shaped server banner so clients apply their OpenSSH compatibility paths
+  (fixes e.g. ssh2 symlink ordering)
+* Interactive PTY sessions now run the login user's shell (resolveShell) with TERM from
+  pty-req and SHELL in the session env — no more silent fallback to dash when the
+  launcher env lacks $SHELL
+
+### Fixed
+* A bare "shell" session request (no pty) is accepted but never started a process —
+  the channel hung forever; it now runs the login shell over plain pipes (ssh -T
+  behavior) and reports the exit status
+
 ## [0.4.3] - 2024-05-27
 ### Changed
 * Update dependencies
