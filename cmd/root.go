@@ -149,7 +149,18 @@ func rootRunEWithExtra(cmd *cobra.Command, args []string, flag *flagType, allPer
 		}
 	}
 	// (base: https://gist.github.com/jpillora/b480fde82bff51a06238)
+	//
+	// handy-sshd: advertise an OpenSSH-shaped identification string. Clients key
+	// wire-compat quirks off the server banner — e.g. ssh2 sends SSH_FXP_SYMLINK as
+	// (targetpath, linkpath) only when the server identifies as OpenSSH, which is the
+	// order pkg/sftp's server parses. Without this, symlink (and any other client-side
+	// OpenSSH-compat path) breaks against handy-sshd while working against OpenSSH.
+	// The SFTP subsystem's status codes, canonical status messages and errno mapping
+	// are aligned with OpenSSH in the vendored pkg/sftp, so this is a compatibility
+	// statement, not an impersonation.
 	sshConfig := &ssh.ServerConfig{
+		// OpenSSH-shaped banner — see the comment above.
+		ServerVersion: "SSH-2.0-OpenSSH_10.0 (handy-sshd " + version.Version + "; OpenSSH-compatible)",
 		PublicKeyCallback: func(metadata ssh.ConnMetadata, key ssh.PublicKey) (*ssh.Permissions, error) {
             if authorizedKeys[string(ssh.FingerprintSHA256(key))] {
                 return nil, nil

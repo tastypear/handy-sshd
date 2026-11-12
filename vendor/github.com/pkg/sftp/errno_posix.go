@@ -18,14 +18,23 @@ func wrapPathError(filepath string, err error) error {
 }
 
 // translateErrno translates a syscall error number to a SFTP error code.
+//
+// handy-sshd: OpenSSH parity patch — table mirrors errno_to_portable() in
+// openssh sftp-server.c so status codes match OpenSSH servers exactly
+// (notably ENOTDIR/ELOOP/EBADF -> NO_SUCH_FILE, where upstream pkg/sftp
+// returned FAILURE).
 func translateErrno(errno syscall.Errno) uint32 {
 	switch errno {
 	case 0:
 		return sshFxOk
-	case syscall.ENOENT:
+	case syscall.ENOENT, syscall.ENOTDIR, syscall.EBADF, syscall.ELOOP:
 		return sshFxNoSuchFile
-	case syscall.EACCES, syscall.EPERM:
+	case syscall.EPERM, syscall.EACCES, syscall.EFAULT:
 		return sshFxPermissionDenied
+	case syscall.ENAMETOOLONG, syscall.EINVAL:
+		return sshFxBadMessage
+	case syscall.ENOSYS:
+		return sshFxOPUnsupported
 	}
 
 	return sshFxFailure

@@ -631,27 +631,48 @@ func statusFromError(id uint32, err error) *sshFxpStatusPacket {
 
 	debug("statusFromError: error is %T %#v", err, err)
 	ret.StatusError.Code = sshFxFailure
-	ret.StatusError.msg = err.Error()
 
 	if os.IsNotExist(err) {
 		ret.StatusError.Code = sshFxNoSuchFile
-		return ret
-	}
-	if code, ok := translateSyscallError(err); ok {
+	} else if code, ok := translateSyscallError(err); ok {
 		ret.StatusError.Code = code
-		return ret
-	}
-
-	if errors.Is(err, io.EOF) {
+	} else if errors.Is(err, io.EOF) {
 		ret.StatusError.Code = sshFxEOF
-		return ret
+	} else {
+		var e fxerr
+		if errors.As(err, &e) {
+			ret.StatusError.Code = uint32(e)
+		}
 	}
 
-	var e fxerr
-	if errors.As(err, &e) {
-		ret.StatusError.Code = uint32(e)
-		return ret
-	}
-
+	// handy-sshd: OpenSSH parity patch — reply with openssh's canonical status text
+	// (status_to_message() in sftp-server.c) instead of the raw Go error text, so
+	// message-based client logic (and clients without their own status table) sees
+	// exactly what an OpenSSH server would send. The raw Go error is preserved in
+	// the debug() line above for server-side diagnostics.
+	ret.StatusError.msg = opensshStatusMessage(ret.StatusError.Code)
 	return ret
+}
+
+// opensshStatusMessage mirrors status_to_message() in openssh sftp-server.c.
+func opensshStatusMessage(code uint32) string {
+	switch code {
+	case sshFxOk:
+		return "Success"
+	case sshFxEOF:
+		return "End of file"
+	case sshFxNoSuchFile:
+		return "No such file"
+	case sshFxPermissionDenied:
+		return "Permission denied"
+	case sshFxBadMessage:
+		return "Bad message"
+	case sshFxNoConnection:
+		return "No connection"
+	case sshFxConnectionLost:
+		return "Connection lost"
+	case sshFxOPUnsupported:
+		return "Operation unsupported"
+	}
+	return "Failure"
 }
