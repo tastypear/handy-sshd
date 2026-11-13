@@ -170,11 +170,16 @@ func (s *Server) handleExecRequest(req *ssh.Request, connection ssh.Channel, she
 	}
 	if err := ssh.Unmarshal(req.Payload, &msg); err != nil {
 		s.Logger.Info("failed to parse message in exec", "err", err)
+		req.Reply(false, nil)
 		return
 	}
 	// SSH exec requests carry a shell command string, not an argv — run through
 	// the login shell like OpenSSH does. Direct argv splitting breaks variable
 	// expansion ($HOME), escapes (\t, \n), pipes, and &&/; sequencing.
+	// RFC 4254: a want_reply exec request MUST be answered. OpenSSH replies SUCCESS
+	// as soon as the session is accepted; without this reply clients (npm ssh2)
+	// treat the exec as failed when the channel closes, even though the command ran.
+	req.Reply(true, nil)
 	s.runShellProcess(connection, resolveShell(shell), []string{"-c", msg.Command})
 }
 
@@ -185,14 +190,17 @@ func (s *Server) runShellProcess(connection ssh.Channel, shell string, args []st
 	cmd := exec.Command(shell, args...)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
+		s.finishShellProcess(connection, 127)
 		return
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
+		s.finishShellProcess(connection, 127)
 		return
 	}
 	stderr, err := cmd.StderrPipe()
 	if err != nil {
+		s.finishShellProcess(connection, 127)
 		return
 	}
 	go io.Copy(stdin, connection)
@@ -204,6 +212,11 @@ func (s *Server) runShellProcess(connection ssh.Channel, shell string, args []st
 			exitCode = exitErr.ExitCode()
 		}
 	}
+	s.finishShellProcess(connection, exitCode)
+}
+
+// finishShellProcess reports the exit status and closes the session channel.
+func (s *Server) finishShellProcess(connection ssh.Channel, exitCode int) {
 	connection.SendRequest("exit-status", false, ssh.Marshal(exitStatusMsg{
 		Status: uint32(exitCode),
 	}))

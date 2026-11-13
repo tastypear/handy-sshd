@@ -5,6 +5,15 @@ The format is based on [Keep a Changelog](http://keepachangelog.com/en/1.0.0/)
 
 ## [Unreleased]
 
+## [0.6.1] - 2026-11-13
+### Fixed
+* exec requests were never answered with CHANNEL_SUCCESS/FAILURE since the 0.6.0
+  refactor (the Reply call was dropped when the pipe wiring moved into
+  runShellProcess) — npm ssh2 clients treated every exec as failed ("Unable to
+  exec") even though the command ran, breaking agent-shim's exec bridge. Now:
+  Reply(true) on accept, Reply(false) on payload parse failure, and
+  exit-status(127) + close if pipe setup fails.
+
 ## [0.6.0] - 2026-11-12
 ### Changed
 * SFTP responses aligned with OpenSSH: errno table (ENOTDIR/ELOOP/EBADF -> NO_SUCH_FILE,
